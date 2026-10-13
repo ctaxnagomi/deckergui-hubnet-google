@@ -1,0 +1,72 @@
+name: Deploy (Cloud Run + Firebase Hosting)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION || 'asia-southeast1' }}
+      SERVICE: dgui-hubnet-google
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Sync the Gemini key into Secret Manager
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "No GEMINI_API_KEY secret set - deploying with the offline stub."
+            echo "SECRET_FLAG=" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if gcloud secrets describe gemini-api-key >/dev/null 2>&1; then
+            printf '%s' "$GEMINI_API_KEY" | gcloud secrets versions add gemini-api-key --data-file=-
+          else
+            printf '%s' "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key \
+              --data-file=- --replication-policy=automatic
+          fi
+          PROJNUM="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+          gcloud secrets add-iam-policy-binding gemini-api-key \
+            --member="serviceAccount:${PROJNUM}-compute@developer.gserviceaccount.com" \
+            --role="roles/secretmanager.secretAccessor" >/dev/null
+          echo "SECRET_FLAG=--set-secrets=GEMINI_API_KEY=gemini-api-key:latest" >> "$GITHUB_ENV"
+
+      - name: Deploy the service to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --source . \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --set-env-vars "GEMINI_MODEL=gemini-2.5-flash,DGUI_HUBNET_I2I_LAN_ONLY=1" \
+            $SECRET_FLAG
+
+      - name: Deploy Firebase Hosting
+        run: npx --yes firebase-tools@latest deploy --only hosting --project "$PROJECT_ID" --non-interactive
+
+      - name: Summary
+        run: |
+          URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')"
+          echo "### Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cloud Run: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Firebase Hosting: https://$PROJECT_ID.web.app" >> "$GITHUB_STEP_SUMMARY"

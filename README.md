@@ -52,6 +52,17 @@ gcloud builds submit --config cloudbuild.yaml .
 (`asia-southeast1`); uncomment `--set-secrets=GEMINI_API_KEY=gemini-api-key:latest`
 to wire the key.
 
+## Firebase Hosting (one public URL)
+
+Firebase Hosting fronts the service: `firebase.json` rewrites every API path
+(`/health`, `/connect`, … `/show/**`) to the `dgui-hubnet-google` Cloud Run
+service, and serves a small landing page (in `public/`) for everything else. The
+public URL is `https://<PROJECT_ID>.web.app`.
+
+Push to `main` deploys both Cloud Run and Hosting via
+`.github/workflows/deploy.yml` (keyless, Workload Identity Federation). One-time
+project + IAM setup is in [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
 ## The flow the demo shows
 
 1. **Transport guard** — an i2i request to a public dock is refused before any manifest is pushed.
@@ -80,7 +91,10 @@ to wire the key.
 ```
 src/            service source (transport, hubnet flow, gemini, store, validation)
 demo/           runbook + runnable demo script
-docs/           service readme, submission deck (HTML/PDF), video script, whitepaper
+docs/           service readme, submission deck (HTML/PDF), video script, whitepaper, deploy guide
+public/         Firebase Hosting landing page
+.github/        deploy workflow (Cloud Run + Firebase Hosting)
+firebase.json   Hosting config (API rewrites to Cloud Run)
 cloudbuild.yaml Cloud Run deploy pipeline
 Dockerfile      container image
 deploy.sh       one-shot deploy helper
