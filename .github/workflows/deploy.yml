@@ -1,4 +1,4 @@
-name: Deploy (Cloud Run + Firebase Hosting)
+name: Deploy to Cloud Run
 
 on:
   push:
@@ -52,7 +52,7 @@ jobs:
             --role="roles/secretmanager.secretAccessor" >/dev/null
           echo "SECRET_FLAG=--set-secrets=GEMINI_API_KEY=gemini-api-key:latest" >> "$GITHUB_ENV"
 
-      - name: Deploy the service to Cloud Run
+      - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" \
             --source . \
@@ -61,12 +61,9 @@ jobs:
             --set-env-vars "GEMINI_MODEL=gemini-2.5-flash,DGUI_HUBNET_I2I_LAN_ONLY=1" \
             $SECRET_FLAG
 
-      - name: Deploy Firebase Hosting
-        run: npx --yes firebase-tools@latest deploy --only hosting --project "$PROJECT_ID" --non-interactive
-
       - name: Summary
         run: |
           URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')"
           echo "### Deployed" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Cloud Run: $URL" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Firebase Hosting: https://$PROJECT_ID.web.app" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Service: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Health: $URL/health" >> "$GITHUB_STEP_SUMMARY"
