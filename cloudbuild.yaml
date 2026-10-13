@@ -1,0 +1,30 @@
+# Cloud Build → Cloud Run for the DGUI HUB NET Google execution layer.
+#
+#   gcloud builds submit --config services/hubnet-google/cloudbuild.yaml \
+#     services/hubnet-google
+#
+# Gemini key: store it as a Secret Manager secret named `gemini-api-key`
+# (`printf '%s' "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key --data-file=-`)
+# then uncomment the --set-secrets line below so the key never lands in the image.
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/dgui-hubnet-google', '.']
+
+  - name: gcr.io/cloud-builders/docker
+    args: ['push', 'gcr.io/$PROJECT_ID/dgui-hubnet-google']
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - dgui-hubnet-google
+      - --image=gcr.io/$PROJECT_ID/dgui-hubnet-google
+      - --region=asia-southeast1
+      - --allow-unauthenticated
+      - --set-env-vars=GEMINI_MODEL=gemini-2.5-flash,DGUI_HUBNET_I2I_LAN_ONLY=1
+      # - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+
+images:
+  - gcr.io/$PROJECT_ID/dgui-hubnet-google
